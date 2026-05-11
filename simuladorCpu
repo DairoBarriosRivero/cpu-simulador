@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simulador del Ciclo de Instrucción CPU</title>
+<style>
+/* ── Fonts ── */
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;600;800&family=Inter:wght@300;400;500&display=swap');
+
+/* ── Reset & Base ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #080d16;
+  --bg2: #0d1320;
+  --bg3: #111827;
+  --bg4: #1a2235;
+  --border: #1e3550;
+  --blue: #38bdf8;
+  --teal: #2dd4bf;
+  --amber: #fbbf24;
+  --green: #4ade80;
+  --purple: #a78bfa;
+  --red: #f87171;
+  --gray: #64748b;
+  --text: #e2e8f0;
+  --text2: #94a3b8;
+  --font-mono: 'Share Tech Mono', monospace;
+  --font-head: 'Orbitron', monospace;
+  --font-body: 'Inter', sans-serif;
+}
+html { scroll-behavior: smooth; }
+body { background: var(--bg); color: var(--text); font-family: var(--font-body); line-height: 1.6; overflow-x: hidden; }
+
+/* ── Noise overlay ── */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  opacity: 0.4;
+}
+
+/* ── Grid lines ── */
+body::after {
+  content: '';
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 48px 48px;
+  opacity: 0.18;
+}
+
+/* ── Nav ── */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(8,13,22,0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 32px;
+  height: 56px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.nav-logo { font-family: var(--font-head); font-size: 11px; color: var(--blue); letter-spacing: 3px; }
+.nav-links { display: flex; gap: 28px; }
+.nav-links a { font-size: 11px; color: var(--gray); text-decoration: none; letter-spacing: 1px; font-family: var(--font-mono); transition: color .2s; }
+.nav-links a:hover { color: var(--blue); }
+
+/* ── Sections ── */
+section { position: relative; z-index: 1; }
+
+/* ── Hero ── */
+.hero {
+  min-height: 100vh;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  padding: 80px 24px 60px;
+  text-align: center;
+}
+.hero-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 10px; color: var(--teal);
+  border: 1px solid var(--teal); border-radius: 4px;
+  padding: 4px 14px; margin-bottom: 32px; letter-spacing: 2px;
+}
+.hero-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--teal); animation: blink 1.5s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+.hero h1 {
+  font-family: var(--font-head);
+  font-size: clamp(28px, 6vw, 64px);
+  font-weight: 800;
+  line-height: 1.1;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, #fff 0%, var(--blue) 50%, var(--teal) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.hero-sub {
+  font-size: clamp(14px, 2vw, 18px);
+  color: var(--text2);
+  max-width: 580px;
+  font-weight: 300;
+  margin-bottom: 48px;
+}
+.hero-cta {
+  display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;
+}
+.btn-primary {
+  font-family: var(--font-head); font-size: 11px; letter-spacing: 2px;
+  padding: 14px 32px; border-radius: 6px;
+  background: var(--blue); color: #080d16; font-weight: 600;
+  text-decoration: none; transition: all .2s;
+  border: none; cursor: pointer;
+}
+.btn-primary:hover { background: var(--teal); transform: translateY(-1px); }
+.btn-secondary {
+  font-family: var(--font-head); font-size: 11px; letter-spacing: 2px;
+  padding: 14px 32px; border-radius: 6px;
+  background: transparent; color: var(--blue); font-weight: 600;
+  text-decoration: none; transition: all .2s;
+  border: 1px solid var(--blue); cursor: pointer;
+}
+.btn-secondary:hover { background: rgba(56,189,248,0.08); transform: translateY(-1px); }
+
+/* Scroll indicator */
+.scroll-hint {
+  position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-size: 9px; color: var(--gray); letter-spacing: 2px;
+}
+.scroll-arrow { width: 1px; height: 40px; background: linear-gradient(to bottom, var(--gray), transparent); }
+
+/* ── Stats bar ── */
+.stats-bar {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+  padding: 20px 32px;
+  display: flex; justify-content: center; gap: 0;
+}
+.stat-item {
+  flex: 1; max-width: 200px; text-align: center;
+  padding: 0 24px;
+  border-right: 1px solid var(--border);
+}
+.stat-item:last-child { border-right: none; }
+.stat-num { font-family: var(--font-head); font-size: 28px; color: var(--blue); font-weight: 800; }
+.stat-lbl { font-size: 10px; color: var(--gray); letter-spacing: 1px; font-family: var(--font-mono); }
+
+/* ── Concept section ── */
+.concept { padding: 80px 32px; max-width: 1100px; margin: 0 auto; }
+.section-header { text-align: center; margin-bottom: 56px; }
+.section-tag { font-family: var(--font-mono); font-size: 10px; color: var(--purple); letter-spacing: 3px; display: block; margin-bottom: 12px; }
+.section-header h2 { font-family: var(--font-head); font-size: clamp(20px, 4vw, 36px); color: var(--text); font-weight: 600; }
+.section-header p { color: var(--text2); font-size: 15px; max-width: 520px; margin: 12px auto 0; }
+
+/* Components grid */
+.comp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.comp-card {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
+  padding: 24px; transition: border-color .2s, transform .2s;
+  position: relative; overflow: hidden;
+}
+.comp-card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  opacity: 0; transition: opacity .2s;
+}
+.comp-card:hover { border-color: var(--blue); transform: translateY(-2px); }
+.comp-card:hover::before { opacity: 1; background: linear-gradient(90deg, var(--blue), var(--teal)); }
+.comp-icon { font-family: var(--font-head); font-size: 22px; font-weight: 800; color: var(--blue); margin-bottom: 10px; letter-spacing: 2px; }
+.comp-card h3 { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 8px; }
+.comp-card p { font-size: 13px; color: var(--text2); line-height: 1.6; }
+
+/* ── Phases section ── */
+.phases-section { padding: 80px 32px; background: var(--bg2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.phases-inner { max-width: 900px; margin: 0 auto; }
+.phase-list { display: flex; flex-direction: column; gap: 0; }
+.phase-item {
+  display: grid; grid-template-columns: 80px 1fr;
+  gap: 24px; padding: 28px 0;
+  border-bottom: 1px solid var(--border);
+  align-items: start;
+}
+.phase-item:last-child { border-bottom: none; }
+.phase-num {
+  font-family: var(--font-head); font-size: 11px; letter-spacing: 2px;
+  padding: 6px 10px; border-radius: 5px; text-align: center; font-weight: 600;
+  border: 1px solid;
+}
+.pn-fetch  { color: var(--blue);   border-color: var(--blue);   background: rgba(56,189,248,0.08); }
+.pn-decode { color: var(--purple); border-color: var(--purple); background: rgba(167,139,250,0.08); }
+.pn-exec   { color: var(--amber);  border-color: var(--amber);  background: rgba(251,191,36,0.08); }
+.pn-store  { color: var(--green);  border-color: var(--green);  background: rgba(74,222,128,0.08); }
+.phase-content h3 { font-family: var(--font-head); font-size: 14px; color: var(--text); margin-bottom: 8px; letter-spacing: 1px; }
+.phase-content p { font-size: 14px; color: var(--text2); }
+.phase-content code { font-family: var(--font-mono); font-size: 12px; color: var(--teal); background: var(--bg4); padding: 1px 6px; border-radius: 3px; }
+
+/* ── Simulator section ── */
+.sim-section { padding: 80px 32px; max-width: 1100px; margin: 0 auto; }
+
+/* ── The Simulator itself ── */
+.sim-wrapper {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
+.hdr { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 10px; }
+.hdr-title { font-family: var(--font-head); font-size: 13px; font-weight: 700; color: var(--blue); letter-spacing: 2px; }
+.sim-status { font-size: 11px; color: var(--gray); display: flex; align-items: center; gap: 6px; }
+.sdot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); animation: blink 1.5s infinite; }
+.phases-bar { display: flex; gap: 4px; margin-bottom: 10px; }
+.ph { flex: 1; text-align: center; padding: 5px 2px; border-radius: 5px; border: 1px solid var(--border); font-size: 9px; font-weight: 700; letter-spacing: 1px; color: var(--gray); background: var(--bg3); transition: all .3s; }
+.ph.active { color: #080d16; }
+.ph0.active { background: var(--blue); border-color: var(--blue); }
+.ph1.active { background: var(--purple); border-color: var(--purple); }
+.ph2.active { background: var(--amber); border-color: var(--amber); }
+.ph3.active { background: var(--green); border-color: var(--green); }
+.sim-layout { display: grid; grid-template-columns: 1fr 200px; gap: 8px; margin-bottom: 8px; }
+.cpu-panel { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.sec-lbl { font-size: 9px; color: var(--gray); letter-spacing: 1.5px; font-weight: 700; margin-bottom: 6px; }
+.regs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-bottom: 8px; }
+.reg { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; transition: border-color .2s, box-shadow .2s; }
+.reg.lit { border-color: var(--blue); box-shadow: 0 0 8px rgba(56,189,248,.25); }
+.reg.lit-amber { border-color: var(--amber); box-shadow: 0 0 8px rgba(251,191,36,.25); }
+.reg.lit-green { border-color: var(--green); box-shadow: 0 0 8px rgba(74,222,128,.25); }
+.reg-name { font-size: 8px; color: var(--gray); letter-spacing: 1px; }
+.reg-abbr { font-size: 15px; font-weight: 700; color: var(--blue); }
+.reg.lit-amber .reg-abbr { color: var(--amber); }
+.reg.lit-green .reg-abbr { color: var(--green); }
+.reg-val { font-size: 10px; color: var(--teal); min-height: 14px; word-break: break-all; }
+.alu-box { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px; margin-bottom: 8px; display: flex; gap: 8px; align-items: center; transition: border-color .2s, box-shadow .2s; }
+.alu-box.lit-amber { border-color: var(--amber); box-shadow: 0 0 8px rgba(251,191,36,.25); }
+.alu-part { text-align: center; flex: 1; }
+.alu-lbl { font-size: 8px; color: var(--gray); margin-bottom: 2px; }
+.alu-val { font-size: 13px; color: var(--teal); font-weight: 700; }
+.alu-op-sym { font-size: 20px; color: var(--amber); font-weight: 700; }
+.alu-result { font-size: 15px; color: var(--green); font-weight: 700; }
+.buses { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px; margin-bottom: 8px; }
+.bus-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+.bus-lbl { width: 60px; font-size: 9px; color: var(--gray); }
+.bus-line { flex: 1; height: 2px; background: var(--border); border-radius: 1px; overflow: hidden; position: relative; }
+.bus-line::after { content: ''; position: absolute; left: -100%; top: 0; width: 100%; height: 100%; opacity: 0; }
+.bus-line.flow::after { animation: bflow .5s ease forwards; opacity: 1; }
+.bus-line.bus-data.flow::after { background: linear-gradient(90deg, transparent, var(--teal), transparent); }
+.bus-line.bus-addr.flow::after { background: linear-gradient(90deg, transparent, var(--purple), transparent); }
+.bus-line.bus-ctrl.flow::after { background: linear-gradient(90deg, transparent, var(--gray), transparent); }
+@keyframes bflow { from{left:-100%} to{left:100%} }
+.bus-val { width: 46px; text-align: right; font-size: 9px; color: var(--gray); }
+.mem-box { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px; }
+.mem-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 2px; }
+.mcell { background: var(--bg3); border: 1px solid var(--border); border-radius: 3px; padding: 3px 2px; text-align: center; }
+.mcell.pc-now { border-color: var(--blue); }
+.mcell.read-now { border-color: var(--amber); background: rgba(251,191,36,.08); animation: rflash .4s ease; }
+@keyframes rflash { 0%{background:rgba(251,191,36,.3)} 100%{background:rgba(251,191,36,.08)} }
+.mcell-addr { font-size: 8px; color: var(--gray); }
+.mcell-data { font-size: 9px; color: var(--teal); font-weight: 700; }
+.log-panel { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 10px; overflow: hidden; }
+.log-list { height: 230px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.log-list::-webkit-scrollbar { width: 3px; }
+.log-list::-webkit-scrollbar-thumb { background: var(--border); }
+.le { font-size: 10px; padding: 2px 5px; border-radius: 3px; border-left: 2px solid transparent; animation: lin .2s ease; }
+@keyframes lin { from{opacity:0;transform:translateX(-3px)} to{opacity:1;transform:none} }
+.le-fetch  { border-color: var(--blue);   color: #93c5fd; }
+.le-decode { border-color: var(--purple); color: #c4b5fd; }
+.le-exec   { border-color: var(--amber);  color: #fde68a; }
+.le-store  { border-color: var(--green);  color: #86efac; }
+.le-info   { border-color: var(--border); color: var(--gray); }
+.le-result { border-color: var(--teal);   color: var(--teal); font-weight: 700; }
+.ctrls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.sbtn { font-family: var(--font-head); font-size: 10px; letter-spacing: 1px; padding: 7px 14px; border-radius: 5px; border: 1px solid; cursor: pointer; background: transparent; transition: all .15s; }
+.sbtn:active { transform: scale(.97); }
+.sbtn:disabled { opacity: .3; cursor: not-allowed; }
+.sb1 { border-color: var(--blue); color: var(--blue); }
+.sb1:not(:disabled):hover { background: var(--blue); color: #080d16; }
+.sb2 { border-color: var(--amber); color: var(--amber); }
+.sb2:not(:disabled):hover { background: var(--amber); color: #080d16; }
+.sb3 { border-color: var(--gray); color: var(--gray); }
+.sb3:not(:disabled):hover { background: var(--gray); color: #080d16; }
+.ssel { font-family: 'Courier New', monospace; font-size: 10px; background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 5px 8px; border-radius: 5px; cursor: pointer; }
+.rtag { margin-left: auto; font-size: 11px; font-weight: 700; padding: 5px 12px; border-radius: 5px; border: 1px solid var(--teal); color: var(--teal); background: var(--bg); display: none; }
+.rtag.show { display: block; }
+
+/* ── Footer ── */
+footer {
+  border-top: 1px solid var(--border);
+  background: var(--bg2);
+  padding: 32px;
+  text-align: center;
+  position: relative; z-index: 1;
+}
+footer p { font-family: var(--font-mono); font-size: 10px; color: var(--gray); letter-spacing: 1px; }
+footer span { color: var(--blue); }
+
+/* ── Responsive ── */
+@media (max-width: 700px) {
+  .sim-layout { grid-template-columns: 1fr; }
+  .log-panel { display: none; }
+  .stats-bar { flex-wrap: wrap; }
+  .stat-item { border-right: none; border-bottom: 1px solid var(--border); }
+  nav .nav-links { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">⬡ CPU SIM</div>
+  <div class="nav-links">
+    <a href="#componentes">Componentes</a>
+    <a href="#fases">Fases</a>
+    <a href="#simulador">Simulador</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge">ARQUITECTURA DE COMPUTADORES</div>
+  <h1>Simulador del<br>Ciclo de Instrucción</h1>
+  <p class="hero-sub">Visualiza en tiempo real cómo una CPU ejecuta instrucciones a través de sus cuatro fases fundamentales: Fetch, Decode, Execute y Writeback.</p>
+  <div class="hero-cta">
+    <a href="#simulador" class="btn-primary">▶ ABRIR SIMULADOR</a>
+    <a href="#componentes" class="btn-secondary">VER TEORÍA</a>
+  </div>
+  <div class="scroll-hint">
+    <span>SCROLL</span>
+    <div class="scroll-arrow"></div>
+  </div>
+</section>
+
+<!-- STATS BAR -->
+<div class="stats-bar">
+  <div class="stat-item">
+    <div class="stat-num">7</div>
+    <div class="stat-lbl">COMPONENTES</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-num">4</div>
+    <div class="stat-lbl">FASES DEL CICLO</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-num">4</div>
+    <div class="stat-lbl">PROGRAMAS</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-num">6</div>
+    <div class="stat-lbl">INSTRUCCIONES</div>
+  </div>
+</div>
+
+<!-- COMPONENTS -->
+<section class="concept" id="componentes">
+  <div class="section-header">
+    <span class="section-tag">01 — COMPONENTES CLAVE</span>
+    <h2>Arquitectura del Procesador</h2>
+    <p>Cada componente cumple un rol específico durante la ejecución de instrucciones.</p>
+  </div>
+  <div class="comp-grid">
+    <div class="comp-card">
+      <div class="comp-icon">PC</div>
+      <h3>Contador de Programa</h3>
+      <p>Registro que almacena la dirección de memoria de la siguiente instrucción a ejecutar. Se incrementa automáticamente tras cada búsqueda.</p>
+    </div>
+    <div class="comp-card">
+      <div class="comp-icon">MAR</div>
+      <h3>Registro de Dirección de Memoria</h3>
+      <p>Recibe la dirección del PC a través del bus de direcciones para localizar la celda de memoria correspondiente donde se encuentra la instrucción.</p>
+    </div>
+    <div class="comp-card">
+      <div class="comp-icon">MBR</div>
+      <h3>Registro Búfer de Memoria</h3>
+      <p>Almacena temporalmente el dato o instrucción recién leída desde memoria, actuando como puente entre la memoria principal y la CPU.</p>
+    </div>
+    <div class="comp-card">
+      <div class="comp-icon">IR</div>
+      <h3>Registro de Instrucción</h3>
+      <p>Guarda el código de la instrucción en procesamiento. La Unidad de Control lo lee para decodificar el OPCode y determinar la operación.</p>
+    </div>
+    <div class="comp-card">
+      <div class="comp-icon">UC</div>
+      <h3>Unidad de Control</h3>
+      <p>El "cerebro" del procesador. Interpreta la instrucción del IR y genera las señales de control que coordinan el resto de los componentes.</p>
+    </div>
+    <div class="comp-card">
+      <div class="comp-icon">ALU</div>
+      <h3>Unidad Aritmético-Lógica</h3>
+      <p>Realiza todas las operaciones matemáticas (suma, resta) y lógicas (AND, OR) requeridas por las instrucciones del programa.</p>
+    </div>
+    <div class="comp-card">
+      <div class="comp-icon">AC</div>
+      <h3>Acumulador</h3>
+      <p>Registro especial que guarda temporalmente los resultados intermedios producidos por la ALU durante la ejecución de operaciones.</p>
+    </div>
+  </div>
+</section>
+
+<!-- PHASES -->
+<section class="phases-section" id="fases">
+  <div class="phases-inner">
+    <div class="section-header">
+      <span class="section-tag">02 — CICLO DE INSTRUCCIÓN</span>
+      <h2>Las Cuatro Fases</h2>
+      <p>Toda instrucción traversa estas etapas en orden para completarse con éxito.</p>
+    </div>
+    <div class="phase-list">
+      <div class="phase-item">
+        <div class="phase-num pn-fetch">FETCH</div>
+        <div class="phase-content">
+          <h3>BÚSQUEDA</h3>
+          <p>El valor del <code>PC</code> se copia al <code>MAR</code> a través del bus de direcciones. La memoria es leída y la instrucción viaja al <code>MBR</code>, luego al <code>IR</code>. El <code>PC</code> se incrementa automáticamente para apuntar a la siguiente dirección.</p>
+        </div>
+      </div>
+      <div class="phase-item">
+        <div class="phase-num pn-decode">DECODE</div>
+        <div class="phase-content">
+          <h3>DECODIFICACIÓN</h3>
+          <p>La <code>UC</code> lee el OPCode almacenado en el <code>IR</code> e interpreta qué operación debe realizarse. Genera las señales de control que activarán los componentes necesarios para la ejecución.</p>
+        </div>
+      </div>
+      <div class="phase-item">
+        <div class="phase-num pn-exec">EXECUTE</div>
+        <div class="phase-content">
+          <h3>EJECUCIÓN</h3>
+          <p>Se realiza la operación física. Si es aritmética (<code>ADD</code>, <code>SUB</code>) o lógica (<code>AND</code>, <code>OR</code>), los operandos pasan a la <code>ALU</code> para ser procesados. El resultado queda disponible para la siguiente fase.</p>
+        </div>
+      </div>
+      <div class="phase-item">
+        <div class="phase-num pn-store">WRITEBACK</div>
+        <div class="phase-content">
+          <h3>ESCRITURA</h3>
+          <p>El resultado final se almacena en el <code>AC</code> (Acumulador) o se escribe de vuelta en la memoria principal. La <code>UC</code> regresa al estado <code>IDLE</code> y el ciclo puede reiniciarse con la siguiente instrucción.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SIMULATOR -->
+<section class="sim-section" id="simulador">
+  <div class="section-header">
+    <span class="section-tag">03 — SIMULADOR INTERACTIVO</span>
+    <h2>Ejecución en Tiempo Real</h2>
+    <p>Selecciona un programa y observa cada transferencia de datos entre registros, buses y memoria.</p>
+  </div>
+
+  <div class="sim-wrapper">
+    <div class="hdr">
+      <div class="hdr-title">⬡ CPU CYCLE SIMULATOR</div>
+      <div class="sim-status"><div class="sdot"></div><span id="sys-status">LISTO</span></div>
+    </div>
+    <div class="phases-bar">
+      <div class="ph ph0" id="ph0">FETCH</div>
+      <div class="ph ph1" id="ph1">DECODE</div>
+      <div class="ph ph2" id="ph2">EXECUTE</div>
+      <div class="ph ph3" id="ph3">WRITEBACK</div>
+    </div>
+    <div class="sim-layout">
+      <div class="cpu-panel">
+        <div class="sec-lbl">REGISTROS</div>
+        <div class="regs">
+          <div class="reg" id="r-pc"><div class="reg-name">PROG. COUNTER</div><div class="reg-abbr">PC</div><div class="reg-val" id="v-pc">0x00</div></div>
+          <div class="reg" id="r-mar"><div class="reg-name">MEM ADDR REG</div><div class="reg-abbr">MAR</div><div class="reg-val" id="v-mar">—</div></div>
+          <div class="reg" id="r-mbr"><div class="reg-name">MEM BUFFER</div><div class="reg-abbr">MBR</div><div class="reg-val" id="v-mbr">—</div></div>
+          <div class="reg" id="r-ir"><div class="reg-name">INSTR. REG</div><div class="reg-abbr">IR</div><div class="reg-val" id="v-ir">—</div></div>
+          <div class="reg" id="r-uc"><div class="reg-name">UNID. CONTROL</div><div class="reg-abbr">UC</div><div class="reg-val" id="v-uc">IDLE</div></div>
+          <div class="reg" id="r-ac"><div class="reg-name">ACUMULADOR</div><div class="reg-abbr">AC</div><div class="reg-val" id="v-ac">0</div></div>
+        </div>
+        <div class="sec-lbl">ALU</div>
+        <div class="alu-box" id="alu-box">
+          <div class="alu-part"><div class="alu-lbl">OPER. A</div><div class="alu-val" id="v-aa">—</div></div>
+          <div class="alu-part"><div class="alu-op-sym" id="v-op">⊕</div></div>
+          <div class="alu-part"><div class="alu-lbl">OPER. B</div><div class="alu-val" id="v-ab">—</div></div>
+          <div class="alu-part"><div class="alu-lbl">RESULT</div><div class="alu-result" id="v-ar">—</div></div>
+        </div>
+        <div class="sec-lbl">BUSES</div>
+        <div class="buses">
+          <div class="bus-row"><div class="bus-lbl">DATOS</div><div class="bus-line bus-data" id="bd"></div><div class="bus-val" id="bv-d" style="color:var(--teal)">—</div></div>
+          <div class="bus-row"><div class="bus-lbl">DIRECCIÓN</div><div class="bus-line bus-addr" id="ba"></div><div class="bus-val" id="bv-a" style="color:var(--purple)">—</div></div>
+          <div class="bus-row"><div class="bus-lbl">CONTROL</div><div class="bus-line bus-ctrl" id="bc"></div><div class="bus-val" id="bv-c">—</div></div>
+        </div>
+        <div class="sec-lbl">MEMORIA PRINCIPAL</div>
+        <div class="mem-box"><div class="mem-grid" id="mem-grid"></div></div>
+      </div>
+      <div class="log-panel">
+        <div class="sec-lbl">▸ REGISTRO</div>
+        <div class="log-list" id="log-list"></div>
+      </div>
+    </div>
+    <div class="ctrls">
+      <select class="ssel" id="prog-sel" onchange="loadProg()">
+        <option value="0">Prog A: 5 + 3 + 2</option>
+        <option value="1">Prog B: 4 × 3 (sumas)</option>
+        <option value="2">Prog C: AND / OR lógico</option>
+        <option value="3">Prog D: 10 − 3 − 3 − 3</option>
+      </select>
+      <button class="sbtn sb1" id="btn-run" onclick="runAll()">▶ EJECUTAR</button>
+      <button class="sbtn sb2" id="btn-step" onclick="doStep()">⏭ PASO</button>
+      <button class="sbtn sb3" onclick="resetSim()">↺ RESET</button>
+      <div class="rtag" id="rtag">AC = <span id="rval">0</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <p>Simulador del Ciclo de Instrucción CPU &nbsp;·&nbsp; Arquitectura de Computadores &nbsp;·&nbsp; <span>HTML / CSS / JS</span></p>
+</footer>
+
+<!-- SIMULATOR LOGIC -->
+<script>
+var PROGS = [
+  { name:"Suma 5+3+2", mem:[
+    {a:"00",d:"LOAD 5",op:"LOAD",v:5},{a:"01",d:"ADD  3",op:"ADD",v:3},
+    {a:"02",d:"ADD  2",op:"ADD",v:2},{a:"03",d:"STORE",op:"STORE",v:null},
+    {a:"04",d:"HALT",op:"HALT",v:null},{a:"05",d:"0x00",op:null,v:null},
+    {a:"06",d:"0x00",op:null,v:null},{a:"07",d:"0x00",op:null,v:null}
+  ]},
+  { name:"Multiplicar 4x3", mem:[
+    {a:"00",d:"LOAD 0",op:"LOAD",v:0},{a:"01",d:"ADD  4",op:"ADD",v:4},
+    {a:"02",d:"ADD  4",op:"ADD",v:4},{a:"03",d:"ADD  4",op:"ADD",v:4},
+    {a:"04",d:"STORE",op:"STORE",v:null},{a:"05",d:"HALT",op:"HALT",v:null},
+    {a:"06",d:"0x00",op:null,v:null},{a:"07",d:"0x00",op:null,v:null}
+  ]},
+  { name:"AND/OR lógico", mem:[
+    {a:"00",d:"LOAD 15",op:"LOAD",v:15},{a:"01",d:"AND  9",op:"AND",v:9},
+    {a:"02",d:"OR   2",op:"OR",v:2},{a:"03",d:"STORE",op:"STORE",v:null},
+    {a:"04",d:"HALT",op:"HALT",v:null},{a:"05",d:"0x00",op:null,v:null},
+    {a:"06",d:"0x00",op:null,v:null},{a:"07",d:"0x00",op:null,v:null}
+  ]},
+  { name:"Resta 10-3-3-3", mem:[
+    {a:"00",d:"LOAD 10",op:"LOAD",v:10},{a:"01",d:"SUB  3",op:"SUB",v:3},
+    {a:"02",d:"SUB  3",op:"SUB",v:3},{a:"03",d:"SUB  3",op:"SUB",v:3},
+    {a:"04",d:"STORE",op:"STORE",v:null},{a:"05",d:"HALT",op:"HALT",v:null},
+    {a:"06",d:"0x00",op:null,v:null},{a:"07",d:"0x00",op:null,v:null}
+  ]}
+];
+
+var prog, steps, stepIdx, ac, running;
+
+function loadProg(){
+  prog = PROGS[parseInt(document.getElementById('prog-sel').value)];
+  resetSim();
+}
+
+function buildSteps(){
+  steps = [];
+  var m = prog.mem;
+  for(var i=0;i<m.length;i++){
+    if(!m[i].op) continue;
+    steps.push({phase:'fetch',idx:i,instr:m[i]});
+    steps.push({phase:'decode',idx:i,instr:m[i]});
+    if(m[i].op !== 'HALT'){
+      steps.push({phase:'exec',idx:i,instr:m[i]});
+      steps.push({phase:'store',idx:i,instr:m[i]});
+    }
+    if(m[i].op === 'HALT'){
+      steps.push({phase:'halt',idx:i,instr:m[i]});
+      break;
+    }
+  }
+}
+
+function resetSim(){
+  ac=0; stepIdx=0; running=false;
+  document.getElementById('v-pc').textContent='0x00';
+  document.getElementById('v-mar').textContent='—';
+  document.getElementById('v-mbr').textContent='—';
+  document.getElementById('v-ir').textContent='—';
+  document.getElementById('v-uc').textContent='IDLE';
+  document.getElementById('v-ac').textContent='0';
+  document.getElementById('v-aa').textContent='—';
+  document.getElementById('v-ab').textContent='—';
+  document.getElementById('v-op').textContent='⊕';
+  document.getElementById('v-ar').textContent='—';
+  clearPhases(); clearBuses(); clearRegs();
+  document.getElementById('alu-box').classList.remove('lit-amber');
+  document.getElementById('rtag').classList.remove('show');
+  document.getElementById('sys-status').textContent='LISTO';
+  document.getElementById('btn-run').disabled=false;
+  document.getElementById('btn-step').disabled=false;
+  document.getElementById('log-list').innerHTML='';
+  buildSteps();
+  renderMem(-1);
+  addLog('info','Programa: '+prog.name);
+  addLog('info','Presiona EJECUTAR o PASO');
+}
+
+function clearPhases(){ for(var i=0;i<4;i++) document.getElementById('ph'+i).classList.remove('active'); }
+function setPhase(p){ clearPhases(); var m={fetch:0,decode:1,exec:2,store:3}; if(m[p]!==undefined) document.getElementById('ph'+m[p]).classList.add('active'); }
+function clearBuses(){
+  ['bd','ba','bc'].forEach(function(id){ var el=document.getElementById(id); el.classList.remove('flow'); });
+  document.getElementById('bv-d').textContent='—';
+  document.getElementById('bv-a').textContent='—';
+  document.getElementById('bv-c').textContent='—';
+}
+function fireBus(id,valId,val){ var el=document.getElementById(id); el.classList.remove('flow'); void el.offsetWidth; el.classList.add('flow'); document.getElementById(valId).textContent=val; }
+function clearRegs(){ ['r-pc','r-mar','r-mbr','r-ir','r-uc','r-ac'].forEach(function(id){ var el=document.getElementById(id); el.classList.remove('lit','lit-amber','lit-green'); }); }
+function litReg(id,type){ var el=document.getElementById(id); el.classList.remove('lit','lit-amber','lit-green'); el.classList.add(type||'lit'); }
+function setReg(id,val){ document.getElementById(id).textContent=val; }
+
+function renderMem(pcIdx){
+  var g=document.getElementById('mem-grid'); g.innerHTML='';
+  prog.mem.forEach(function(cell,i){
+    var d=document.createElement('div');
+    d.className='mcell'+(i===pcIdx?' pc-now':'');
+    d.innerHTML='<div class="mcell-addr">'+cell.a+'</div><div class="mcell-data">'+cell.d+'</div>';
+    g.appendChild(d);
+  });
+}
+function hlMem(idx){
+  document.querySelectorAll('.mcell').forEach(function(c,i){
+    c.classList.remove('read-now','pc-now');
+    if(i===idx) c.classList.add('read-now');
+  });
+}
+function addLog(type,msg){
+  var list=document.getElementById('log-list');
+  var div=document.createElement('div');
+  div.className='le le-'+type;
+  div.textContent=msg;
+  list.appendChild(div);
+  list.scrollTop=list.scrollHeight;
+}
+function wait(ms){ return new Promise(function(r){setTimeout(r,ms);}); }
+
+async function execStep(s){
+  var ph=s.phase, idx=s.idx, instr=s.instr;
+  clearRegs();
+  document.getElementById('alu-box').classList.remove('lit-amber');
+
+  if(ph==='fetch'){
+    setPhase('fetch');
+    document.getElementById('sys-status').textContent='FETCH';
+    addLog('fetch','[FETCH] PC=0x'+instr.a+' → MAR');
+    litReg('r-pc');
+    await wait(100);
+    fireBus('ba','bv-a','0x'+instr.a);
+    setReg('v-mar','0x'+instr.a); litReg('r-mar');
+    await wait(200);
+    addLog('fetch','Mem[0x'+instr.a+'] → MBR');
+    hlMem(idx);
+    fireBus('bd','bv-d',instr.d);
+    setReg('v-mbr',instr.d); litReg('r-mbr');
+    await wait(180);
+    addLog('fetch','MBR → IR  |  PC++');
+    setReg('v-ir',instr.d); litReg('r-ir');
+    var newPc=idx+1;
+    setReg('v-pc','0x'+('0'+newPc).slice(-2));
+    renderMem(newPc);
+  } else if(ph==='decode'){
+    setPhase('decode');
+    document.getElementById('sys-status').textContent='DECODE';
+    addLog('decode','[DECODE] UC interpreta: '+instr.op+(instr.v!==null?' '+instr.v:''));
+    litReg('r-uc'); litReg('r-ir');
+    setReg('v-uc','EXEC '+instr.op);
+    await wait(180);
+    fireBus('bc','bv-c',instr.op);
+    addLog('decode','Señales de control generadas ✓');
+  } else if(ph==='exec'){
+    setPhase('exec');
+    document.getElementById('sys-status').textContent='EXECUTE';
+    var res=ac, opSym='⊕';
+    if(instr.op==='LOAD'){ res=instr.v; opSym='←'; document.getElementById('v-aa').textContent=instr.v; document.getElementById('v-ab').textContent='—'; addLog('exec','[EXEC] AC ← '+instr.v);
+    } else if(instr.op==='ADD'){ res=ac+instr.v; opSym='+'; document.getElementById('v-aa').textContent=ac; document.getElementById('v-ab').textContent=instr.v; addLog('exec','[EXEC] '+ac+' + '+instr.v+' = '+res);
+    } else if(instr.op==='SUB'){ res=ac-instr.v; opSym='−'; document.getElementById('v-aa').textContent=ac; document.getElementById('v-ab').textContent=instr.v; addLog('exec','[EXEC] '+ac+' − '+instr.v+' = '+res);
+    } else if(instr.op==='AND'){ res=(ac&instr.v); opSym='&'; document.getElementById('v-aa').textContent=ac; document.getElementById('v-ab').textContent=instr.v; addLog('exec','[EXEC] '+ac+' AND '+instr.v+' = '+res);
+    } else if(instr.op==='OR'){ res=(ac|instr.v); opSym='|'; document.getElementById('v-aa').textContent=ac; document.getElementById('v-ab').textContent=instr.v; addLog('exec','[EXEC] '+ac+' OR '+instr.v+' = '+res);
+    } else if(instr.op==='STORE'){ addLog('exec','[EXEC] Preparando: AC='+ac); document.getElementById('v-aa').textContent=ac; document.getElementById('v-ab').textContent='—'; }
+    document.getElementById('v-op').textContent=opSym;
+    document.getElementById('v-ar').textContent=res;
+    document.getElementById('alu-box').classList.add('lit-amber');
+    fireBus('bd','bv-d',''+res);
+    ac=res;
+  } else if(ph==='store'){
+    setPhase('store');
+    document.getElementById('sys-status').textContent='WRITEBACK';
+    addLog('store','[WRITEBACK] Resultado → AC = '+ac);
+    setReg('v-ac',ac); litReg('r-ac','lit-green');
+    fireBus('bc','bv-c','WB');
+    setReg('v-uc','IDLE');
+  } else if(ph==='halt'){
+    clearPhases();
+    document.getElementById('sys-status').textContent='HALT — FIN';
+    addLog('info','▬ HALT — Programa terminado');
+    addLog('result','✓ Resultado final: AC = '+ac);
+    document.getElementById('rtag').classList.add('show');
+    document.getElementById('rval').textContent=ac;
+    document.getElementById('btn-run').disabled=true;
+    document.getElementById('btn-step').disabled=true;
+  }
+}
+
+async function runAll(){
+  if(running) return;
+  running=true;
+  document.getElementById('btn-run').disabled=true;
+  document.getElementById('btn-step').disabled=true;
+  while(stepIdx<steps.length){
+    await execStep(steps[stepIdx]);
+    stepIdx++;
+    await wait(380);
+  }
+  running=false;
+}
+
+async function doStep(){
+  if(running||stepIdx>=steps.length) return;
+  await execStep(steps[stepIdx]);
+  stepIdx++;
+}
+
+function loadProg(){
+  prog=PROGS[parseInt(document.getElementById('prog-sel').value)];
+  resetSim();
+}
+
+prog=PROGS[0];
+resetSim();
+</script>
+</body>
+</html> 
